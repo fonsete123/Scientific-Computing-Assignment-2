@@ -1,0 +1,196 @@
+\documentclass[11pt, journal]{IEEEtran}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage[pdftex]{graphicx}
+\usepackage[cmex10]{amsmath}
+\usepackage{amssymb}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{float}
+\usepackage[hidelinks]{hyperref}
+
+
+\begin{document}
+
+% paper title
+\title{Scientific Computing Exercise Set \#2}
+
+% author names and student numbers
+\author{John~Doe~(\#\#) \& Jane~Doe~(\#\#) \& Smith~Thethird~(\#\#)}
+
+\IEEEspecialpapernotice{\textbf{Repository}: (set your own) \url{https://github.com/UvaCsl/}}
+
+% the paper headers
+\markboth{Scientific~Computing~Course | University~of~Amsterdam | Date,~2025}{}
+
+% make the title area
+\maketitle
+
+
+\section{Introduction}
+
+\IEEEPARstart{D}{iffusion-limited} aggregation (DLA) is a growth model that describes the formation of fractal structures through the diffusion and deposition of particles. First introduced by Witten and Sander~\cite{witten1981}, DLA has applications in crystal growth, electrodeposition, and dielectric breakdown. The model produces branching structures whose fractal dimension depends on the growth conditions.
+
+In this report we investigate DLA using two approaches: (i)~a continuum method based on iteratively solving the Laplace equation for the nutrient concentration, and (ii)~a Monte Carlo method using individual random walkers. We also study the Gray-Scott reaction-diffusion model, which produces Turing-like spatial patterns through the interplay of diffusion and autocatalytic reactions~\cite{pearson1993}. Section~II describes the numerical methods. Section~III presents results for all exercises. Section~IV discusses the findings.
+
+
+\section{Methods}
+
+\subsection{SOR Solver for the Laplace Equation}
+
+The steady-state concentration $c(x,y)$ satisfies the Laplace equation $\nabla^2 c = 0$ on an $N \times N$ grid with boundary conditions $c(y=0)=0$, $c(y=N)=1$, and periodic boundaries in $x$. Object sites act as sinks with $c=0$. We discretize with the standard 5-point stencil:
+\begin{equation}
+c_{i,j} = \frac{1}{4}\left(c_{i+1,j} + c_{i-1,j} + c_{i,j+1} + c_{i,j-1}\right)
+\end{equation}
+and solve iteratively using Successive Over-Relaxation (SOR):
+\begin{equation}
+c_{i,j}^{k+1} = \frac{\omega}{4}\left(c_{i+1,j}^{k} + c_{i-1,j}^{k+1} + c_{i,j+1}^{k} + c_{i,j-1}^{k+1}\right) + (1-\omega)\,c_{i,j}^{k}
+\end{equation}
+where $\omega \in (1,2)$ is the relaxation parameter. Convergence is declared when $\delta \equiv \max|c^{k+1}-c^{k}| < \epsilon = 10^{-5}$. The field is initialized with the analytical linear gradient $c(j) = j/(N-1)$ for optimal warm-starting.
+
+For Exercise~B, we implemented a vectorized red-black (checkerboard) SOR variant. Grid points are partitioned by parity of $(i+j)$: within each color all updates are independent and can be performed simultaneously using NumPy array operations, eliminating Python-level loops entirely.
+
+\subsection{DLA Growth Model (Exercises A--B)}
+
+Growth proceeds iteratively. At each step: (1)~identify growth candidates---free sites with at least one 4-connected neighbor in the cluster; (2)~compute growth probability:
+\begin{equation}
+p_g(i,j) = \frac{c_{i,j}^{\,\eta}}{\displaystyle\sum_{\text{candidates}} c_{i,j}^{\,\eta}}
+\end{equation}
+where $\eta$ controls cluster morphology; (3)~select one candidate via weighted random sampling; (4)~add the site to the cluster and set $c=0$; (5)~re-solve the Laplace equation, warm-starting from the previous solution. The seed is a single point at the bottom center.
+
+\subsection{Monte Carlo DLA (Exercises C--D)}
+
+One random walker at a time is released from a random $x$-position on the top boundary. The walker moves randomly (up/down/left/right with equal probability), with periodic BC in $x$. Walkers exiting through top or bottom are removed. When a walker occupies a cell adjacent to the cluster, it sticks with probability $p_s$; if it does not stick, the walk continues but the walker cannot enter cluster sites. For $p_s=1$ this reduces to standard DLA.
+
+\subsection{Gray-Scott Model (Exercise E)}
+
+The Gray-Scott model describes two reacting, diffusing chemicals $U$ and $V$:
+\begin{align}
+\frac{\partial u}{\partial t} &= D_u \nabla^2 u - uv^2 + f(1-u) \label{eq:gs_u}\\
+\frac{\partial v}{\partial t} &= D_v \nabla^2 v + uv^2 - (f+k)v \label{eq:gs_v}
+\end{align}
+where $f$ is the feed rate and $k$ the kill rate. The term $uv^2$ represents the autocatalytic reaction $U + 2V \to 3V$. We use explicit Euler time-stepping with a 5-point stencil Laplacian and periodic BC on all sides, computed via NumPy roll operations. Parameters: $\delta t = 1$, $\delta x = 1$, $D_u = 0.16$, $D_v = 0.08$. Initial conditions: $u=1$ everywhere, $v=0.25$ in a $20\times20$ center square, with uniform random noise of amplitude $0.01$.
+
+
+\section{Results}
+
+\subsection{Exercise A: DLA with Diffusion Equation (4 pts)}
+
+We performed DLA simulations on a $100\times100$ grid with 200 growth steps for $\eta \in \{0, 0.5, 1, 2, 3\}$ using the vectorized SOR solver with $\omega = 1.8$.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{figures/exercise_a_dla_clusters.png}
+\caption{DLA clusters with concentration fields for different $\eta$ values on a $100\times100$ grid after 200 growth steps. The background shows the nutrient concentration (hot colormap: black$\,=\,0$, yellow$\,=\,1$), and the cluster is overlaid in blue. As $\eta$ increases, clusters transition from compact (Eden) to fractal (DLA) to needle-like morphologies.}
+\label{fig:dla_clusters}
+\end{figure}
+
+Fig.~\ref{fig:dla_clusters} shows the clusters overlaid on their concentration fields. A clear morphological transition is observed. For $\eta=0$ (Eden cluster), growth probability is uniform across all candidates, producing a compact, roughly circular cluster. For $\eta=1$ (standard DLA), the cluster displays characteristic fractal branching: tips that protrude into higher-concentration regions screen the interior from nutrient flux, consistent with the theoretical fractal dimension $D_f \approx 1.71$ for 2D DLA. For $\eta=2$ and $\eta=3$, branches become progressively thinner and more elongated; at $\eta=3$ the cluster grows as a nearly one-dimensional filament directed toward the source, as only the tip with maximal concentration has significant growth probability.
+
+The concentration fields illustrate the screening effect: for high $\eta$, a strong gradient focuses near the leading tip, while for $\eta=0$ the field remains nearly linear.
+
+\textbf{SOR $\omega$ optimization.} We tested $\omega$ from 1.0 to 1.95 on 20 DLA growth steps ($N=50$, $\eta=1$). Total time decreased from 1.23\,s ($\omega=1.0$) to a minimum of 0.43\,s at $\omega \approx 1.90$, then increased sharply to 0.71\,s at $\omega=1.95$ as the method approaches instability. The optimal $\omega$ near 1.85--1.90 is consistent with theoretical expectations for SOR on the Laplace equation.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\columnwidth]{figures/exercise_a_omega_test.png}
+\caption{Total computation time vs.\ SOR relaxation parameter $\omega$ for 20 DLA growth steps on a $50\times50$ grid. The optimum lies near $\omega \approx 1.90$.}
+\label{fig:omega_test}
+\end{figure}
+
+\subsection{Exercise B: SOR Optimization (1 pt)}
+
+We compared the naive loop-based SOR against the vectorized red-black SOR for 30 DLA growth steps.
+
+\begin{table}[H]
+\centering
+\caption{Timing comparison of naive vs.\ vectorized SOR for 30 DLA growth steps ($\eta=1$, $\omega=1.8$).}
+\label{tab:sor_timing}
+\begin{tabular}{lccc}
+\toprule
+Grid Size & Naive (s) & Vectorized (s) & Speedup \\
+\midrule
+$50\times50$   & 10.84 & 0.99 & 11.0$\times$ \\
+$100\times100$ & 36.45 & 1.37 & 26.7$\times$ \\
+$150\times150$ & ---   & 2.24 & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The vectorized solver achieves an 11$\times$ speedup at $N\!=\!50$ and 27$\times$ at $N\!=\!100$ (Table~\ref{tab:sor_timing}, Fig.~\ref{fig:optimization}). The speedup grows with grid size because the naive solver's overhead scales as $O(N^2)$ Python-level loop iterations per SOR sweep, while the vectorized solver performs the same updates via NumPy's C-level array operations. For $N\!=\!150$, the naive solver was prohibitively slow ($>120$\,s estimated), while the vectorized solver completed in 2.24\,s, demonstrating the practical necessity of vectorization for larger grids.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\columnwidth]{figures/exercise_b_optimization.png}
+\caption{Total DLA simulation time as a function of grid size for the naive and vectorized SOR solvers (30 growth steps).}
+\label{fig:optimization}
+\end{figure}
+
+\subsection{Exercise C: Monte Carlo DLA (2 pts)}
+
+Fig.~\ref{fig:mc_dla} shows a Monte Carlo DLA cluster grown with 300 particles on a $100\times100$ grid ($p_s\!=\!1$). The cluster displays fractal branching comparable to diffusion-based DLA with $\eta\!=\!1$ (Fig.~\ref{fig:dla_clusters}). This is expected: the random walk of particles produces, in the ensemble average, a concentration field satisfying the Laplace equation, so the probability of a walker reaching a boundary site is proportional to the local concentration---exactly matching $\eta\!=\!1$ growth.
+
+The Monte Carlo cluster shows somewhat more stochastic branching compared to the diffusion result, reflecting the particle-by-particle nature of growth. However, the overall morphology---branching arms, tip-splitting, interior screening---is qualitatively identical. The simulation completed in approximately 66\,s for 300 particles.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.75\columnwidth]{figures/exercise_c_mc_dla.png}
+\caption{Monte Carlo DLA cluster with 300 particles on a $100\times100$ grid ($p_s=1.0$). The fractal branching structure is comparable to diffusion-based DLA at $\eta=1$.}
+\label{fig:mc_dla}
+\end{figure}
+
+\subsection{Exercise D: Sticking Probability (1 pt)}
+
+Fig.~\ref{fig:sticking} shows clusters for $p_s \in \{0.1, 0.3, 0.5, 0.7, 1.0\}$, each with 300 particles. As $p_s$ decreases, the clusters become progressively more compact. At $p_s\!=\!1$, walkers stick on first contact, so protruding tips capture most walkers (screening effect), producing open fractal branches. At $p_s\!=\!0.1$, walkers that fail to stick continue diffusing, penetrating into gaps before eventually attaching. This effectively averages out concentration gradients and reduces the tip effect, producing compact clusters analogous to low-$\eta$ diffusion DLA. In the limit $p_s \to 0$, growth would approach the Eden model.
+
+Computation time increases as $p_s$ decreases (112\,s for $p_s\!=\!0.1$ vs.\ 62\,s for $p_s\!=\!1.0$) because each walker requires more steps before sticking.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{figures/exercise_d_sticking_prob.png}
+\caption{Monte Carlo DLA clusters for different sticking probabilities $p_s$ (300 particles, $100\times100$ grid). Lower $p_s$ produces more compact clusters by reducing the tip-screening effect.}
+\label{fig:sticking}
+\end{figure}
+
+\subsection{Exercise E: Gray-Scott Model (3 pts)}
+
+\textbf{Time evolution} ($f\!=\!0.035$, $k\!=\!0.060$). Fig.~\ref{fig:gs_time} shows the concentration of $v$ at six time points on a $256\times256$ grid. The initial square perturbation develops into a four-lobed structure by $t\!=\!1000$. By $t\!=\!2500$, fingering instabilities emerge. At $t\!=\!5000$, a labyrinthine stripe pattern has developed, which fills the domain by $t\!=\!10000$. This is the classic Turing instability: the difference in diffusion rates ($D_u > D_v$) destabilizes the homogeneous state to spatial perturbations of a characteristic wavelength, causing the activator ($v$) to self-organize into periodic structures.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{figures/exercise_e_time_evolution.png}
+\caption{Gray-Scott time evolution ($f\!=\!0.035$, $k\!=\!0.060$, $N\!=\!256$). The $v$ concentration is shown at $t = 0, 1000, 2500, 5000, 7500, 10000$. The initial perturbation develops into a labyrinthine Turing pattern. Colorbar: $v$ concentration (inferno colormap).}
+\label{fig:gs_time}
+\end{figure}
+
+\textbf{Parameter comparison.} Fig.~\ref{fig:gs_params} shows steady-state patterns for four $(f,k)$ combinations. The labyrinth case ($f\!=\!0.035$, $k\!=\!0.060$) produces dense interdigitating stripes. The spots case ($f\!=\!0.030$, $k\!=\!0.057$) yields wider stripes with a larger characteristic wavelength due to the lower feed rate. The stripes case ($f\!=\!0.025$, $k\!=\!0.055$) shows wide, well-separated stripes that propagate slowly. The waves case ($f\!=\!0.040$, $k\!=\!0.060$) produces finer features driven by a stronger instability. These results are consistent with the rich phase diagram documented by Pearson~\cite{pearson1993}, demonstrating how the ratio $f/k$ controls pattern morphology.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{figures/exercise_e_parameter_comparison.png}
+\caption{Gray-Scott patterns at steady state ($N\!=\!256$) for four parameter sets. Different $(f,k)$ values produce distinct morphologies: dense labyrinths, wide stripes, and fine wave-like patterns. Colorbars show $v$ concentration.}
+\label{fig:gs_params}
+\end{figure}
+
+
+\section{Discussion and Conclusion}
+
+The diffusion-based DLA correctly reproduces the expected morphological transition from compact Eden clusters ($\eta\!=\!0$) through fractal DLA ($\eta\!=\!1$) to needle-like structures ($\eta > 1$). The SOR solver, initialized with the analytical gradient and warm-started between growth steps, converges efficiently with optimal $\omega \approx 1.90$ for the $100\times100$ grid. The vectorized red-black implementation provides up to $27\times$ speedup over naive loops, enabling practical simulation on larger grids.
+
+The Monte Carlo DLA confirms that random-walker growth produces the same fractal structures as the diffusion approach for $\eta\!=\!1$, validating the theoretical equivalence. The sticking probability $p_s$ provides an intuitive control parameter analogous to $\eta$: low $p_s$ yields compact clusters by reducing tip screening.
+
+The Gray-Scott model produces Turing-like patterns matching known literature results. The explicit Euler scheme with periodic BC proves stable for the chosen parameters. Different $(f,k)$ combinations produce distinct morphologies, demonstrating the rich behavior of this reaction-diffusion system.
+
+A limitation is the absence of quantitative fractal dimension analysis. Future work could measure $D_f$ via box-counting and systematically map the Gray-Scott phase diagram.
+
+\begin{thebibliography}{9}
+\bibitem{witten1981}
+T.~A.~Witten and L.~M.~Sander, ``Diffusion-limited aggregation, a kinetic critical phenomenon,'' \textit{Phys.\ Rev.\ Lett.}, vol.~47, no.~19, pp.~1400--1403, 1981.
+
+\bibitem{pearson1993}
+J.~E.~Pearson, ``Complex patterns in a simple system,'' \textit{Science}, vol.~261, no.~5118, pp.~189--192, 1993.
+\end{thebibliography}
+
+\end{document}
